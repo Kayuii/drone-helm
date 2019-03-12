@@ -42,6 +42,48 @@ func TestInitialiseKubeconfig(t *testing.T) {
 	if !strings.Contains(kubeConfigStr, "my-cert-data") {
 		t.Errorf("Kubeconfig doesn't render certificate")
 	}
+	if strings.Contains(kubeConfigStr, "aws-iam-authenticator") {
+		t.Errorf("Kubeconfig renders EKS cluster configuration")
+	}
+}
+
+func TestInitialiseKubeconfigEKS(t *testing.T) {
+
+	plugin := Plugin{
+		Config: Config{
+			APIServer:     "http://myapiserver",
+			Certificate:   "my-cert-data",
+			EKSCluster:    "my-eks-cluster-name",
+			EKSRoleARN:    "my-eks-role-arn",
+			HelmCommand:   "",
+			Namespace:     "default",
+			SkipTLSVerify: false, // if set the true with Certificate, this test will fail
+		},
+	}
+
+	configfile := "config3.test"
+	initialiseKubeconfig(&plugin.Config, "../kubeconfig", configfile)
+	data, err := ioutil.ReadFile(configfile)
+	if err != nil {
+		t.Errorf("Error reading file %v", err)
+	}
+	kubeConfigStr := string(data)
+
+	if strings.Contains(kubeConfigStr, "token:") {
+		t.Errorf("Kubeconfig renders token")
+	}
+	if !strings.Contains(kubeConfigStr, "http://myapiserver") {
+		t.Errorf("Kubeconfig doesn't render APIServer")
+	}
+	if !strings.Contains(kubeConfigStr, "my-cert-data") {
+		t.Errorf("Kubeconfig doesn't render certificate")
+	}
+	if !strings.Contains(kubeConfigStr, "my-eks-cluster-name") {
+		t.Errorf("Kubeconfig doesn't render EKS cluster name")
+	}
+	if !strings.Contains(kubeConfigStr, "my-eks-role-arn") {
+		t.Errorf("Kubeconfig doesn't render EKS role ARN")
+	}
 }
 
 func TestGetHelmCommandEmptyPushEvent(t *testing.T) {
@@ -128,6 +170,30 @@ func TestGetHelmDeleteCommand(t *testing.T) {
 		t.Errorf("Result is %s and we expected %s", res, expected)
 	}
 }
+
+func TestGetHelmCommandLint(t *testing.T) {
+	os.Setenv("DRONE_BUILD_EVENT", "push")
+	plugin := &Plugin{
+		Config: Config{
+			APIServer:     "http://myapiserver",
+			Token:         "secret-token",
+			HelmCommand:   "lint",
+			Namespace:     "default",
+			SkipTLSVerify: true,
+			Chart:         "./chart/test",
+			Values:        `"image.tag=v.0.1.0,nameOverride=my-over-app"`,
+			StringValues:  `"long_string_value=1234567890"`,
+		},
+	}
+	setHelmCommand(plugin)
+	res := strings.Join(plugin.command[:], " ")
+	expected := "lint ./chart/test --set image.tag=v.0.1.0,nameOverride=my-over-app --set-string long_string_value=1234567890 --namespace default"
+	if res != expected {
+		t.Errorf("Result is %s and we expected %s", res, expected)
+	}
+}
+
+
 
 func TestGetHelmDeleteCommandOverried(t *testing.T) {
 	os.Setenv("DRONE_BUILD_EVENT", "deployment")

@@ -29,6 +29,8 @@ type (
 		Release            string   `json:"release"`
 		Chart              string   `json:"chart"`
 		Version            string   `json:"version"`
+		EKSCluster         string   `json:"eks_cluster"`
+		EKSRoleARN         string   `json:"eks_role_arn"`
 		Values             string   `json:"values"`
 		StringValues       string   `json:"string_values"`
 		ValuesFiles        string   `json:"values_files"`
@@ -137,7 +139,45 @@ func setUpgradeCommand(p *Plugin) {
 		upgrade = append(upgrade, "--force")
 	}
 	p.command = upgrade
+}
 
+func setLintCommand(p *Plugin) {
+	lint := make([]string, 2)
+	lint[0] = "lint"
+	lint[1] = p.Config.Chart
+
+	if p.Config.Values != "" {
+		lint = append(lint, "--set")
+		lint = append(lint, unQuote(p.Config.Values))
+	}
+
+	if p.Config.StringValues != "" {
+		lint = append(lint, "--set-string")
+		lint = append(lint, unQuote(p.Config.StringValues))
+	}
+
+	if p.Config.ValuesFiles != "" {
+		for _, valuesFile := range strings.Split(p.Config.ValuesFiles, ",") {
+			lint = append(lint, "--values")
+			lint = append(lint, valuesFile)
+		}
+	}
+
+	if p.Config.Namespace != "" {
+		lint = append(lint, "--namespace")
+		lint = append(lint, p.Config.Namespace)
+	}
+
+	if p.Config.TillerNs != "" {
+		lint = append(lint, "--tiller-namespace")
+		lint = append(lint, p.Config.TillerNs)
+	}
+
+	if p.Config.Debug {
+		lint = append(lint, "--debug")
+	}
+
+	p.command = lint
 }
 
 func setHelmCommand(p *Plugin) {
@@ -147,6 +187,8 @@ func setHelmCommand(p *Plugin) {
 		setUpgradeCommand(p)
 	case "delete":
 		setDeleteCommand(p)
+	case "lint":
+		setLintCommand(p)
 	default:
 		switch os.Getenv("DRONE_BUILD_EVENT") {
 		case "push", "tag", "deployment", "pull_request", "promote", "rollback":
@@ -160,7 +202,7 @@ func setHelmCommand(p *Plugin) {
 
 }
 
-var repoExp = regexp.MustCompile(`^(?P<name>[\w-]+)=(?P<url>(http|https)://[\w-./:]+)`)
+var repoExp = regexp.MustCompile(`^(?P<name>[\w-]+)=(?P<url>(http|https)://[\w-./:@-]+)`)
 
 // parseRepo returns map of regex capture groups (name, url)
 func parseRepo(repo string) (map[string]string, error) {
@@ -238,8 +280,10 @@ func (p *Plugin) Exec() error {
 		if p.Config.APIServer == "" {
 			return fmt.Errorf("Error: API Server is needed to deploy.")
 		}
-		if p.Config.Token == "" {
-			return fmt.Errorf("Error: Token is needed to deploy.")
+		if p.Config.EKSCluster == "" {
+			if p.Config.Token == "" {
+				return fmt.Errorf("Error: Token is needed to deploy.")
+			}
 		}
 		initialiseKubeconfig(&p.Config, KUBECONFIG, p.Config.KubeConfig)
 	}
